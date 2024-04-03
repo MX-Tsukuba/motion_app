@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>動画アップロードと長方形選択</title>
+<style>
+    #video-container {
+        position: relative;
+        display: none;
+    }
+    #video {
+        border: 1px solid black;
+    }
+    #videoCanvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        border: 1px solid black;
+    }
+    #submit-button {
+        display: none;
+    }
+
+    #myButton {
+        margin-top: 50px;
+    }
+</style>
+</head>
+<body>
+
+    
+<form id="upload-form">
+    <input type="file" id="video-input" name="video" accept="video/*">
+    <button type="button" onclick="loadVideo()">動画の読み込み</button>
+</form>
+
+<div id="video-container">
+    <video id="video" controls></video>
+    <canvas id="videoCanvas"></canvas>
+</div>
+
+<button id="submit-button" type="button" onclick="submitSelection()">座標の提出</button>
+
+<div id="loading" style="display: none;">Processing...</div>
+
+<button id="myButton">すでに骨格推定済みの動画一覧</button>
+
+<script>
+
+let selection = { x1: 0, y1: 0, x2: 0, y2: 0 };
+let isDrawing = false;
+let canvas;
+let ctx;
+
+function loadVideo() {
+    const videoInput = document.getElementById('video-input');
+    const videoContainer = document.getElementById('video-container');
+    const submitButton = document.getElementById('submit-button');
+    
+    video = document.getElementById('video');
+    canvas = document.getElementById('videoCanvas');
+    ctx = canvas.getContext('2d');
+
+    if (videoInput.files.length > 0) {
+        const videoFile = videoInput.files[0];
+        const videoURL = URL.createObjectURL(videoFile);
+        video.src = videoURL;
+        videoContainer.style.display = 'block';
+        
+        video.addEventListener('loadedmetadata', function() {
+            // 動画の元のサイズに基づいてcanvasのサイズを設定
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight - 60;
+            // videoのサイズもコンテナに合わせて調整
+            video.style.maxWidth = '100%';
+            video.style.height = 'auto';
+            // videoContainerのサイズを動画に合わせる
+            videoContainer.style.width = `${video.videoWidth}px`;
+            videoContainer.style.height = `${video.videoHeight}px`;
+            // 提出ボタンを表示
+            submitButton.style.display = 'block';
+            // 動画を再生
+            video.play();
+        });
+    }
+}
+
+document.getElementById('videoCanvas').addEventListener('mousedown', function(e) {
+    console.log("kkk")
+    isDrawing = true;
+    const rect = canvas.getBoundingClientRect();
+    selection.x1 = e.clientX - rect.left;
+    selection.y1 = e.clientY - rect.top;
+});
+
+document.getElementById('videoCanvas').addEventListener('mousemove', function(e) {
+    if (isDrawing === true) {
+        console.log("ooo")
+        const rect = canvas.getBoundingClientRect();
+        selection.x2 = e.clientX - rect.left;
+        selection.y2 = e.clientY - rect.top;
+        drawRect();
+    }
+});
+
+document.getElementById('videoCanvas').addEventListener('mouseup', function(e) {
+    isDrawing = false;
+});
+
+function drawRect() {
+    const canvas = document.getElementById('videoCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
+    ctx.beginPath();
+    ctx.rect(selection.x1, selection.y1, selection.x2 - selection.x1, selection.y2 - selection.y1);
+    ctx.strokeStyle = 'red';
+    ctx.stroke();
+}
+
+function submitSelection() {
+    // FormDataオブジェクトを作成
+    let formData = new FormData();
+    let videoInput = document.getElementById('video-input');
+
+    // 長方形の座標と動画ファイルをFormDataに追加
+    formData.append('video', videoInput.files[0]);
+    formData.append('x1', selection.x1);
+    formData.append('y1', selection.y1);
+    formData.append('x2', selection.x2);
+    formData.append('y2', selection.y2);
+    document.getElementById('loading').style.display = 'block';
+
+    // Fetch APIを使用してサーバーにPOSTリクエストを送信
+    fetch('/', {
+    method: 'POST',
+    body: formData
+    })
+    .then(response => response.json())  // JSONレスポンスを解析
+    .then(data => {
+        // ローディングインジケーターを非表示
+        document.getElementById('loading').style.display = 'none';
+        
+        // サーバーから受け取ったリダイレクトURLにリダイレクト
+        window.location.href = data.redirect_url;
+    })
+    .catch((error) => {
+        console.error('Error:', error);
+        // ローディングインジケーターを非表示
+        document.getElementById('loading').style.display = 'none';
+    });
+
+}
+
+document.getElementById('myButton').addEventListener('click', function() {
+    window.location.href = '/select-directory'; // 移動先のエンドポイント
+});
+
+</script>
+</body>
+</html>
