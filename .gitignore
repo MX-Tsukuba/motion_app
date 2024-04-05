@@ -3,5 +3,5 @@ test.py
 test*.py
 
 # 各々で動画上げてくれ
-**/datas/**
+# **/datas/**
 
