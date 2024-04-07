@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>キーポイントの修正</title>
@@ -12,8 +13,10 @@
             height: 10px;
             background-color: red;
             position: absolute;
-            border-radius: 5px; /* 丸みを帯びた点にする */
+            border-radius: 5px;
+            /* 丸みを帯びた点にする */
         }
+
         #keypoint-canvas {
             position: absolute;
             top: 0;
@@ -21,34 +24,37 @@
         }
     </style>
 </head>
+
 <body>
     <select id="image-selector"></select>
     <button id="prev-image">前の画像</button>
     <button id="next-image">次の画像</button>
     <div id="container" style="position: relative;">
-        <img id="keypoint-image" src="" alt="画像"  style="position: relative;">
+        <img id="keypoint-image" src="" alt="画像" style="position: relative;">
         <canvas id="keypoint-canvas"></canvas>
     </div>
 
     <button id="save-csv">座標をCSVに保存</button>
+    <button id="add-foot-size">足のサイズを追加</button>
 
     <script>
-    $(document).ready(function() {
-        const imageSelector = $('#image-selector');
-        const container = $('#container');
-        const canvas = document.getElementById('keypoint-canvas');
-        const ctx = canvas.getContext('2d');
-        let currentImageIndex = 0;
-        let keypointsAll = {{ keypoints|tojson }};
-        let imagePaths = {{ image_paths|tojson }};
-        const POSE_PAIRS = {{ pose_pairs|tojson }};
+        $(document).ready(function () {
+            const imageSelector = $('#image-selector');
+            const container = $('#container');
+            const canvas = document.getElementById('keypoint-canvas');
+            const ctx = canvas.getContext('2d');
+            let currentImageIndex = 0;
+            let keypointsAll = {{ keypoints| tojson
+        }};
+        let imagePaths = {{ image_paths| tojson }};
+        const POSE_PAIRS = {{ pose_pairs| tojson }};
 
         // 画像選択のセレクターを初期化
         imagePaths.forEach((path, index) => {
             imageSelector.append(`<option value="${index}">${path.split('/').pop()}</option>`);
         });
 
-        imageSelector.change(function() {
+        imageSelector.change(function () {
             currentImageIndex = $(this).val();
             loadImageAndKeypoints(currentImageIndex);
         });
@@ -58,13 +64,13 @@
             loadImageAndKeypoints(currentImageIndex);
         }
 
-        $('#prev-image').click(function() {
+        $('#prev-image').click(function () {
             if (currentImageIndex > 0) {
                 changeImage(currentImageIndex - 1);
             }
         });
 
-        $('#next-image').click(function() {
+        $('#next-image').click(function () {
             if (currentImageIndex < imagePaths.length - 1) {
                 changeImage(currentImageIndex + 1);
             }
@@ -73,7 +79,7 @@
         function loadImageAndKeypoints(index) {
             const image = new Image();
             image.src = imagePaths[index];
-            image.onload = function() {
+            image.onload = function () {
                 $('#keypoint-image').attr('src', image.src);
                 canvas.width = image.width;
                 canvas.height = image.height;
@@ -117,7 +123,7 @@
                 // Make the keypoint draggable
                 keypointDiv.draggable({
                     containment: "parent",
-                    drag: function(event, ui) {
+                    drag: function (event, ui) {
                         // Update the keypoint position in the array
                         keypoints[$(this).data('index')] = [ui.position.left, ui.position.top];
                         // Redraw the skeleton
@@ -132,39 +138,118 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
 
-    $('#save-csv').click(function() {
-        // Gather keypoints data from all images
-        const dataToSave = keypointsAll.map((keypoints) => {
-            return keypoints.map((kp) => kp || [null, null]); // Replace undefined with null
+        $('#save-csv').click(function () {
+            // 足のキーポイントデータを既存のキーポイントデータに追加する処理
+            const extendedDataToSave = keypointsAll.map((frame_keypoints, frameIndex) => {
+                // フレームごとの足のキーポイントを取得して、各キーポイントの座標（またはnull）を抽出
+                const footKeypointsForFrame = footKeypoints.map(kp => kp.pos || [null, null]);
+
+                // 既存のキーポイントデータと足のキーポイントデータを結合
+                const combinedFrameKeypoints = [...frame_keypoints, ...footKeypointsForFrame].flat();
+
+                // 結合したデータをフラット化して、null値を含む可能性のあるキーポイントを処理
+                return combinedFrameKeypoints.flatMap(kp => kp !== null ? kp : [null, null]);
+            });
+
+            // 統合したデータをサーバーに送信する処理
+            var currentPath = window.location.pathname;
+            var endpointName = currentPath.split('/')[2];
+            var requestURL = '/save-keypoints/' + endpointName;
+
+            $.ajax({
+                url: requestURL,
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(extendedDataToSave),
+                success: function (response) {
+                    alert('Keypoints saved successfully!');
+                },
+                error: function (xhr, status, error) {
+                    alert('Error saving keypoints: ' + error.message);
+                }
+            });
         });
 
-        var currentPath = window.location.pathname;
-        var endpointName = currentPath.split('/')[2];
-        var requestURL = '/save-keypoints/' + endpointName;
 
-        // Send the data to the server
-        $.ajax({
-            url: requestURL,
-            type: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify(dataToSave),
-            success: function(response) {
-                alert('Keypoints saved successfully!');
-            },
-            error: function(xhr, status, error) {
-                alert('Error saving keypoints: ' + error.message);
-            }
+        // 足のサイズに関するキーポイントを保存する配列
+        let footKeypoints = [
+            { id: 'right_toe', pos: null },
+            { id: 'right_heel', pos: null },
+            { id: 'right_ankle', pos: null },
+            { id: 'left_toe', pos: null },
+            { id: 'left_heel', pos: null },
+            { id: 'left_ankle', pos: null }
+        ];
+
+        // キーポイントをキャンバスに描画する関数
+        function drawFootKeypoints() {
+            // 既存のキーポイントをクリア
+            $('.foot-keypoint').remove();
+
+            // 足のキーポイントを描画
+            footKeypoints.forEach(kp => {
+                if (kp.pos) {
+                    const keypointDiv = $(`<div class="keypoint foot-keypoint"></div>`).appendTo(container);
+                    keypointDiv.css({
+                        left: kp.pos[0] + 'px',
+                        top: kp.pos[1] + 'px',
+                        'background-color': 'blue'  // 足のキーポイントは青色にする
+                    }).data('id', kp.id);
+
+                    // キーポイントをドラッグ可能にする
+                    keypointDiv.draggable({
+                        containment: "parent",
+                        drag: function (event, ui) {
+                            const id = $(this).data('id');
+                            const point = footKeypoints.find(p => p.id === id);
+                            point.pos = [ui.position.left, ui.position.top];
+                            drawConnectingLines();  // キーポイント間の線を描画する
+                        }
+                    });
+                }
+            });
+        }
+
+        // キーポイント間を結ぶ線を描画する関数
+        function drawConnectingLines() {
+            clearCanvas();  // キャンバスをクリア
+            ctx.beginPath();
+            footKeypoints.forEach((kp, index) => {
+                if (kp.pos) {
+                    if (index === 0) {
+                        ctx.moveTo(...kp.pos);
+                    } else {
+                        ctx.lineTo(...kp.pos);
+                    }
+                }
+            });
+            ctx.strokeStyle = 'blue';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // 「足のサイズを追加」ボタンのクリックイベント
+        $('#add-foot-size').click(function () {
+            // 仮の座標でキーポイントを初期化
+            footKeypoints.forEach(kp => {
+                kp.pos = [canvas.width / 2, canvas.height / 2];
+            });
+            drawFootKeypoints();  // キーポイントを描画
+            drawConnectingLines();  // キーポイント間の線を描画
         });
-    });
 
-        
+
+
+
 
         // Load the first image by default
         loadImageAndKeypoints(0);
     });
 
+
     </script>
 
-    
+
 </body>
+
 </html>
