@@ -98,16 +98,20 @@ def imputation(directory_name):
 @app.route('/save-keypoints/<directory_name>', methods=['POST'])
 def save_keypoints(directory_name):
     keypoints = request.json
-    data_dir = os.path.join(app.static_folder, 'datas', directory_name,"fixed_keypoints.csv")
+    data_dir = os.path.join(app.static_folder, 'datas', directory_name, "fixed_keypoints.csv")
+    
+    # 足のキーポイントを含む新しいヘッダーの生成
+    # ここで25は既存のキーポイント数、6は足のキーポイント数
+    header = [f'{xy}{i}' for i in range(25 + 6) for xy in ['x', 'y']]
+    
     with open(data_dir, 'w', newline='') as csvfile:
-        header = [f'{xy}{i}' for i in range(25) for xy in ['x', 'y']]
         writer = csv.writer(csvfile)
         writer.writerow(header)
         for frame_keypoints in keypoints:
-            # Flatten the keypoints array and handle None values
-            flat_keypoints = [coord for kp in frame_keypoints for coord in (kp or [None, None])]
-            writer.writerow(flat_keypoints)
+            writer.writerow(frame_keypoints)  # フラット化されたキーポイント配列をそのまま書き込む
+    
     return jsonify({'message': 'Keypoints saved successfully!'})
+
 
 
 if __name__ == '__main__':
