@@ -142,13 +142,13 @@
             // 足のキーポイントデータを既存のキーポイントデータに追加する処理
             const extendedDataToSave = keypointsAll.map((frame_keypoints, frameIndex) => {
                 // フレームごとの足のキーポイントを取得して、各キーポイントの座標（またはnull）を抽出
-                const footKeypointsForFrame = footKeypoints.map(kp => kp.pos || [null, null]);
+                const footKeypointsForFrame = footKeypoints.map(kp => kp.pos || null);
 
                 // 既存のキーポイントデータと足のキーポイントデータを結合
                 const combinedFrameKeypoints = [...frame_keypoints, ...footKeypointsForFrame].flat();
 
                 // 結合したデータをフラット化して、null値を含む可能性のあるキーポイントを処理
-                return combinedFrameKeypoints.flatMap(kp => kp !== null ? kp : [null, null]);
+                return combinedFrameKeypoints.flatMap(kp => kp !== null ? kp : null);
             });
 
             // 統合したデータをサーバーに送信する処理
