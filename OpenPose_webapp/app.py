@@ -4,7 +4,9 @@ import os
 import tempfile
 import csv
 from datetime import datetime
+import json
 # 外部ファイルからの関数をインポート（例: process_video関数）
+from func import openPoseToVideo
 from func import openPoseToVideo
 
 app = Flask(__name__, static_folder='static')
@@ -51,6 +53,7 @@ def index():
         y2 = int(float(request.form['y2']))
         
         # process_video関数を呼び出し、時刻を取得
+        # timestamp = openPoseToVideo.SkeletalEstimation(video_path,(x1,y1),(x2,y2))
         timestamp = openPoseToVideo.SkeletalEstimation(video_path,(x1,y1),(x2,y2))
 
         # リダイレクトでページを更新
@@ -97,21 +100,40 @@ def imputation(directory_name):
 
 @app.route('/save-keypoints/<directory_name>', methods=['POST'])
 def save_keypoints(directory_name):
-    keypoints = request.json
-    data_dir = os.path.join(app.static_folder, 'datas', directory_name, "fixed_keypoints.csv")
+    keypoints = request.json  # JSON形式でキーポイントデータを受け取る
+
+    csv_dir = os.path.join(app.static_folder, 'datas', directory_name, "fixed_keypoints.csv")
+    json_dir = os.path.join(app.static_folder, 'datas', directory_name, "keypoints.json")
     
-    # 足のキーポイントを含む新しいヘッダーの生成
-    # ここで25は既存のキーポイント数、6は足のキーポイント数
-    header = [f'{xy}{i}' for i in range(25 + 6) for xy in ['x', 'y']]
-    
-    with open(data_dir, 'w', newline='') as csvfile:
+    header = [f'{xy}{i}' for i in range(31) for xy in ['x', 'y']]  # 31個のキーポイント
+
+    # CSVファイルの保存
+    with open(csv_dir, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(header)
         for frame_keypoints in keypoints:
-            writer.writerow(frame_keypoints)  # フラット化されたキーポイント配列をそのまま書き込む
+            # フラット化を安全に行う
+            flat_list = []
+            for sublist in frame_keypoints:
+                if isinstance(sublist, list):
+                    flat_list.extend(sublist)  # sublistがリストの場合、拡張
+                else:
+                    flat_list.append(sublist)  # sublistが数値の場合、追加
+            writer.writerow(flat_list)
+    
+    # JSONファイルの保存
+    formatted_json = []
+    for frame in keypoints:
+        frame_dict = {}
+        for i, (x, y) in enumerate(zip(frame[::2], frame[1::2])):  # x, y値のペアを抽出
+            frame_dict[f'x{i}'] = x
+            frame_dict[f'y{i}'] = y
+        formatted_json.append(frame_dict)
+
+    with open(json_dir, 'w') as jsonfile:
+        json.dump(formatted_json, jsonfile, indent=4)
     
     return jsonify({'message': 'Keypoints saved successfully!'})
-
 
 
 if __name__ == '__main__':
