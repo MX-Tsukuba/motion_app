@@ -5,13 +5,11 @@ import os
 from datetime import datetime
 from func.modules import GetBodyPoints, FrameAddSkeleton,  Normalization, saveFunc
 
-def SkeletalEstimation(video_path_,TL_position,BR_position,MODE_="MOT16"):
-
+def SkeletalEstimation(video_path_, TL_position, BR_position, model_name="openPose"):
     # 現在の日時を取得
     now = datetime.now()
 
     # 文字列に変換するためのフォーマットを指定
-    # 例: '2024-04-03 14:59:00'
     date_string = now.strftime('%Y-%m-%d-%H-%M-%S')
     
     landmarks_data = []
@@ -24,23 +22,24 @@ def SkeletalEstimation(video_path_,TL_position,BR_position,MODE_="MOT16"):
     while cap.isOpened():
         ret, frame = cap.read()
         if ret:
-            trimmed_image = Normalization.trim_image(frame, TL_position,BR_position)
-
+            trimmed_image = Normalization.trim_image(frame, TL_position, BR_position)
             copied_image = trimmed_image.copy()
 
-            points,probs = GetBodyPoints.GetBodyPoints(trimmed_image, MODE_=MODE_)
-
-            skeleton_frame = FrameAddSkeleton.FrameAddSkeleton(trimmed_image, points, MODE_=MODE_)
+            if model_name == "openPose":
+                points, probs = GetBodyPoints.GetBodyPoints(trimmed_image, MODE_="openPose")
+                skeleton_frame = FrameAddSkeleton.FrameAddSkeleton(trimmed_image, points, MODE_="openPose")
+            elif model_name == "YOLO":
+                points, probs = GetBodyPoints.GetBodyPoints(trimmed_image, MODE_="YOLO")
+                skeleton_frame = FrameAddSkeleton.FrameAddSkeleton(trimmed_image, points, MODE_="YOLO")
+            else:
+                raise ValueError("Unsupported model name")
 
             edit_raw_frames_data.append(copied_image)
             landmarks_data.append(points)
             frames_with_skelton_data.append(skeleton_frame)
             probs_data.append(probs)
         else: 
-            # ここ、breakにしないとwhile分から抜け出せなくなる。
             break
-        
-
 
     # 取得されたデータ(座標データとフレーム画像)を保存
     base_dir = r"OpenPose_webapp\static\datas"

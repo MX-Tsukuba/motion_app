@@ -1,32 +1,38 @@
 import cv2
 import numpy as np
 import time
+from ultralytics import YOLO
 
-def GetBodyPoints(frame_,MODE_="MOT16"):
-
+def GetBodyPoints(frame_, MODE_="MOT16"):
     if MODE_ == "COCO":
-        protoFile = "OpenPoseModels\coco\pose_deploy_linevec.prototxt"  # ネットワークのテキスト記述が含まれる.prototxtファイルへのパス。このファイルには、ネットワークの各レイヤーの定義やそれらのレイヤー間の接続など、ネットワークのアーキテクチャに関する情報が含まれている。
-        weightsFile = "OpenPose_webapp\OpenPoseModels\coco\pose_iter_440000.caffemodel"  # 学習済みネットワークが含まれる.caffemodelファイルへのパス
-        nPoints = 18  # キーポイントの数
+        protoFile = "OpenPoseModels\coco\pose_deploy_linevec.prototxt"
+        weightsFile = "OpenPoseModels\coco\pose_iter_440000.caffemodel"
+        nPoints = 18
     elif MODE_ == "MPI":
         protoFile = "OpenPoseModels\mpi\pose_deploy_linevec_faster_4_stages.prototxt"
         weightsFile = "OpenPoseModels\mpi\pose_iter_160000.caffemodel"
         nPoints = 15
-    # 以下は未完成
     elif MODE_ == "MOT16":
         protoFile = r"OpenPose_webapp\OpenPoseModels\mot16\pose_deploy.prototxt"
         weightsFile = r"OpenPose_webapp\OpenPoseModels\mot16\pose_iter_584000.caffemodel"
         nPoints = 25
+    elif MODE_ == "YOLO":
+        # YOLOモデルの読み込み部分を追加
+        model = YOLO("yolov8n-pose.pt")
+        results = model(frame_)
+        keypoints = results[0].keypoints.data[0].cpu().numpy()
+        points = [(int(x), int(y)) if conf > 0.5 else (None, None) for x, y, conf in keypoints]
+        probs = [conf for x, y, conf in keypoints]
+        return points, probs
+    else:
+        raise ValueError("Unsupported model name")
 
-    # 画像に関するデータを取得
-    frameCopy = np.copy(frame_)  # キーポイントを描画するための画像のコピーを作成
-    frameWidth = frame_.shape[1]  # 画像の幅
-    frameHeight = frame_.shape[0]  # 画像の高さ
-    threshold = 0.1  # キーポイントを検出するための閾値
+    frameCopy = np.copy(frame_)
+    frameWidth = frame_.shape[1]
+    frameHeight = frame_.shape[0]
+    threshold = 0.1
 
-    # ネットワークをロードする
     net = cv2.dnn.readNetFromCaffe(protoFile, weightsFile)
-    # GPUが使用可能かどうかをチェック
     if cv2.cuda.getCudaEnabledDeviceCount() > 0:
         net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
         net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
@@ -34,48 +40,38 @@ def GetBodyPoints(frame_,MODE_="MOT16"):
         net.setPreferableBackend(cv2.dnn.DNN_BACKEND_DEFAULT)
         net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
-    # ネットワーク用に入力画像を準備する
     inWidth = 368
     inHeight = 368
-    inpBlob = cv2.dnn.blobFromImage(frame_, 1.0 / 255, (inWidth, inHeight),
-                                    (0, 0, 0), swapRB=False, crop=False)
-    
-    net.setInput(inpBlob)  # 準備されたblobをネットワークの入力として設定する
+    inpBlob = cv2.dnn.blobFromImage(frame_, 1.0 / 255, (inWidth, inHeight), (0, 0, 0), swapRB=False, crop=False)
+    net.setInput(inpBlob)
 
-    t = time.time()  # 実行時間を測定するための開始時間
-    output = net.forward()  # 出力を取得するために前方パスを実行する
-    print("time taken by network : {:.3f}".format(time.time() - t))  # 実行時間を出力
+    t = time.time()
+    output = net.forward()
+    print("time taken by network : {:.3f}".format(time.time() - t))
 
-    H = output.shape[2]  # 出力層の高さ
-    W = output.shape[3]  # 出力層の幅
+    H = output.shape[2]
+    W = output.shape[3]
 
-    # 検出されたキーポイントを格納するための空のリスト
     points = []
     probs = []
 
-    # すべてのキーポイントに対してループ
     for i in range(nPoints):
-        # 現在のキーポイントのための信頼度マップを取得する
         probMap = output[0, i, :, :]
-        # 信頼度マップの最大値を見つける
         minVal, prob, minLoc, point = cv2.minMaxLoc(probMap)
         
-        # ポイントを元の画像に合わせてスケーリングする
         x = (frameWidth * point[0]) / W
         y = (frameHeight * point[1]) / H
 
         probs.append(prob)
 
-        if prob > threshold:  # 閾値より大きい場合
-            # 画像上にキーポイントを描画する
+        if prob > threshold:
             cv2.circle(frameCopy, (int(x), int(y)), 4, (0, 255, 255), thickness=-1, lineType=cv2.FILLED)
             cv2.putText(frameCopy, "{}".format(i), (int(x), int(y)), cv2.FONT_HERSHEY_SIMPLEX, 0.2, (0, 0, 255), 1, lineType=cv2.LINE_AA)
-            
-            points.append((int(x), int(y)))  # リストにポイントを追加
+            points.append((int(x), int(y)))
         else:
-            points.append((None,None))  # キーポイントが検出されない場合はNoneを追加
+            points.append((None, None))
 
-    return points,probs
+    return points, probs
 
 def find_highest_prob_on_circle(prob_map_resized, center, radius):
     max_prob = -999 # いったん、確率を使わずに値を出す。

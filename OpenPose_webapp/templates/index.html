@@ -131,6 +131,7 @@
             // FormDataオブジェクトを作成
             let formData = new FormData();
             let videoInput = document.getElementById('video-input');
+            let modelName = document.getElementById('model-name').value;
 
             // 長方形の座標と動画ファイルをFormDataに追加
             formData.append('video', videoInput.files[0]);
@@ -138,6 +139,7 @@
             formData.append('y1', selection.y1);
             formData.append('x2', selection.x2);
             formData.append('y2', selection.y2);
+            formData.append('model_name', modelName);
             document.getElementById('loading').style.display = 'block';
 
             // Fetch APIを使用してサーバーにPOSTリクエストを送信

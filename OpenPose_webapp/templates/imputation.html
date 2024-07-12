@@ -25,6 +25,10 @@
 </head>
 
 <body>
+    <select id="model-selector">
+        <option value="openPose">OpenPose</option>
+        <option value="YOLO">YOLO</option>
+    </select>
     <select id="image-selector"></select>
     <button id="prev-image">前の画像</button>
     <button id="next-image">次の画像</button>
@@ -34,11 +38,11 @@
     </div>
 
     <button id="save-csv">座標を保存</button>
-    <!-- <button id="add-foot-size">足のサイズを追加</button> -->
 
     <script>
         $(document).ready(function () {
             const imageSelector = $('#image-selector');
+            const modelSelector = $('#model-selector');
             const container = $('#container');
             const canvas = document.getElementById('keypoint-canvas');
             const ctx = canvas.getContext('2d');
@@ -46,7 +50,17 @@
             let keypointsAll = {{ keypoints| tojson
         }};
         let imagePaths = {{ image_paths| tojson }};
-        const POSE_PAIRS = {{ pose_pairs| tojson }};
+        let posePairs = {{ pose_pairs| tojson }};
+        const POSE_PAIRS_MAP = {
+            "openPose": [[2, 3], [1, 2], [1, 5], [5, 6], [3, 4], [6, 7], [1, 8], [9, 10], [10, 11], [2, 9], [5, 12], [9, 8], [8, 12], [12, 13], [13, 14], [0, 1]],
+            "YOLO": [[0, 1], [0, 2], [1, 3], [2, 4], [5, 6], [5, 7], [6, 8], [7, 9], [8, 10], [5, 11], [6, 12], [11, 12], [11, 13], [12, 14], [13, 15], [14, 16]]
+        };
+
+        // モデル選択に基づいてPOSE_PAIRSを設定
+        modelSelector.change(function () {
+            posePairs = POSE_PAIRS_MAP[modelSelector.val()];
+            loadImageAndKeypoints(currentImageIndex);
+        });
 
         // 画像選択のセレクターを初期化
         imagePaths.forEach((path, index) => {
@@ -89,7 +103,7 @@
 
         function drawSkeleton(keypoints) {
             clearCanvas();
-            POSE_PAIRS.forEach(pair => {
+            posePairs.forEach(pair => {
                 let start = keypoints[pair[0]];
                 let end = keypoints[pair[1]];
                 if (start && end && start[0] != null && start[1] != null && end[0] != null && end[1] != null) {
@@ -104,28 +118,23 @@
         }
 
         function addDraggableKeypoints(keypoints) {
-            $('.keypoint').remove(); // 古いキーポイントを削除
+            $('.keypoint').remove();
             keypoints.forEach((point, index) => {
-                // Check if the point is null and set a default position if it is
                 if (!point || point[0] === null || point[1] === null) {
-                    point = [canvas.width / 2, canvas.height / 2]; // デフォルトの位置を設定
-                    keypoints[index] = point; // キーポイント配列を更新
+                    point = [canvas.width / 2, canvas.height / 2];
+                    keypoints[index] = point;
                 }
 
-                // キーポイントのdivを作成し、コンテナに追加
                 const keypointDiv = $('<div class="keypoint"></div>').appendTo(container);
                 keypointDiv.css({
                     left: point[0] + 'px',
                     top: point[1] + 'px'
                 }).data('index', index);
 
-                // キーポイントをドラッグ可能にする
                 keypointDiv.draggable({
                     containment: "parent",
                     drag: function (event, ui) {
-                        // キーポイントの位置を配列に更新
                         keypoints[$(this).data('index')] = [ui.position.left, ui.position.top];
-                        // スケルトンを再描画
                         drawSkeleton(keypoints);
                     }
                 });
@@ -159,77 +168,10 @@
             });
         });
 
-        // 足のサイズに関するキーポイントを保存する配列
-        // let footKeypoints = [
-        //     { id: 'right_toe', pos: null },
-        //     { id: 'right_heel', pos: null },
-        //     { id: 'right_ankle', pos: null },
-        //     { id: 'left_toe', pos: null },
-        //     { id: 'left_heel', pos: null },
-        //     { id: 'left_ankle', pos: null }
-        // ];
-
-        // キーポイントをキャンバスに描画する関数
-        function drawFootKeypoints() {
-            // 既存のキーポイントをクリア
-            $('.foot-keypoint').remove();
-
-            // 足のキーポイントを描画
-            footKeypoints.forEach(kp => {
-                if (kp.pos) {
-                    const keypointDiv = $(`<div class="keypoint foot-keypoint"></div>`).appendTo(container);
-                    keypointDiv.css({
-                        left: kp.pos[0] + 'px',
-                        top: kp.pos[1] + 'px',
-                        'background-color': 'blue'  // 足のキーポイントは青色にする
-                    }).data('id', kp.id);
-
-                    // キーポイントをドラッグ可能にする
-                    keypointDiv.draggable({
-                        containment: "parent",
-                        drag: function (event, ui) {
-                            const id = $(this).data('id');
-                            const point = footKeypoints.find(p => p.id === id);
-                            point.pos = [ui.position.left, ui.position.top];
-                            drawConnectingLines();  // キーポイント間の線を描画する
-                        }
-                    });
-                }
-            });
-        }
-
-        // キーポイント間を結ぶ線を描画する関数
-        function drawConnectingLines() {
-            clearCanvas();  // キャンバスをクリア
-            ctx.beginPath();
-            footKeypoints.forEach((kp, index) => {
-                if (kp.pos) {
-                    if (index === 0) {
-                        ctx.moveTo(...kp.pos);
-                    } else {
-                        ctx.lineTo(...kp.pos);
-                    }
-                }
-            });
-            ctx.strokeStyle = 'blue';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-        }
-
-        // 「足のサイズを追加」ボタンのクリックイベント
-        // $('#add-foot-size').click(function () {
-        //     // 仮の座標でキーポイントを初期化
-        //     footKeypoints.forEach(kp => {
-        //         kp.pos = [canvas.width / 2, canvas.height / 2];
-        //     });
-        //     drawFootKeypoints();  // キーポイントを描画
-        //     drawConnectingLines();  // キーポイント間の線を描画
-        // });
-
-        // 初期状態で最初の画像を読み込む
         loadImageAndKeypoints(0);
         });
     </script>
+
 </body>
 
 </html>

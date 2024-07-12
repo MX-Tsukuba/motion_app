@@ -13,16 +13,14 @@ app = Flask(__name__, static_folder='static')
 
 def load_keypoints(csv_file_path):
     df = pd.read_csv(csv_file_path, skiprows=1)
-    exclude_indices = {15, 16, 17, 18, 19, 20, 21, 22, 23, 24}
     keypoints_list = []
     for index, row in df.iterrows():
         keypoints = []
-        for i in range(0, len(row) - 1, 2):
-            if i//2 not in exclude_indices:
-                if not pd.isna(row[i]) and not pd.isna(row[i+1]):
-                    keypoints.append((row[i], row[i+1]))
-                else:
-                    keypoints.append((None, None))
+        for i in range(0, len(row), 2):
+            if not pd.isna(row[i]) and not pd.isna(row[i + 1]):
+                keypoints.append((row[i], row[i + 1]))
+            else:
+                keypoints.append((None, None))
         keypoints_list.append(keypoints)
     return keypoints_list
 
@@ -41,10 +39,10 @@ def get_image_paths(image_dir):
 def index():
     if request.method == 'POST':
         video_file = request.files['video']
-        # 一時ファイルを作成
+        model_name = request.form['model_name']  # モデル名を取得
+
         temp_dir = tempfile.mkdtemp()
         video_path = os.path.join(temp_dir, 'temp_video.mp4')
-        # アップロードされたファイルを一時ファイルに保存
         video_file.save(video_path)
 
         x1 = int(float(request.form['x1']))
@@ -52,11 +50,8 @@ def index():
         x2 = int(float(request.form['x2']))
         y2 = int(float(request.form['y2']))
         
-        # process_video関数を呼び出し、時刻を取得
-        # timestamp = openPoseToVideo.SkeletalEstimation(video_path,(x1,y1),(x2,y2))
-        timestamp = openPoseToVideo.SkeletalEstimation(video_path,(x1,y1),(x2,y2))
+        timestamp = openPoseToVideo.SkeletalEstimation(video_path, (x1, y1), (x2, y2), model_name)
 
-        # リダイレクトでページを更新
         redirect_url = url_for('imputation', directory_name=timestamp)
         return jsonify({'redirect_url': redirect_url})
     
@@ -77,26 +72,30 @@ def select_directory():
 
 @app.route('/imputation/<directory_name>')
 def imputation(directory_name):
+    model_name = request.args.get('model_name', 'openPose')
     data_dir = os.path.join(app.static_folder, 'datas', directory_name)
     keypoints_csv_file_path = os.path.join(data_dir, 'landmarks.csv')
     probs_csv_file_path = os.path.join(data_dir, 'probs.csv')
     image_dir = os.path.join(data_dir, 'raw_frames')
 
-    POSE_PAIRS = [[2,3],[1,2],[1,5],[5,6],[3,4],[6,7],[1,8],[9,10],[10,11],[2,9],[5,12],[9,8],[8,12],[12,13],[13,14],[0,1]]
-    
+    POSE_PAIRS_MAP = {
+        "openPose": [[2,3],[1,2],[1,5],[5,6],[3,4],[6,7],[1,8],[9,10],[10,11],[2,9],[5,12],[9,8],[8,12],[12,13],[13,14],[0,1]],
+        "YOLO": [[0, 1], [0, 2], [1, 3], [2, 4], [5, 6], [5, 7], [6, 8], [7, 9], [8, 10], [5, 11], [6, 12], [11, 12], [11, 13], [12, 14], [13, 15], [14, 16]]
+    }
+
     keypoints = load_keypoints(keypoints_csv_file_path)
     probs = load_probs(probs_csv_file_path)
     image_paths = get_image_paths(image_dir)
     threshold = 0.5
     below_threshold_indices = []
-    
+
     for i, row in enumerate(probs):
         if any(float(num) <= threshold for num in row):
             below_threshold_indices.append(i)
 
     image_urls = [os.path.join(app.static_url_path, 'datas', directory_name, 'raw_frames', os.path.basename(path)) for path in image_paths]
 
-    return render_template('imputation.html', image_paths=image_urls[1:-1], keypoints=keypoints, pose_pairs=POSE_PAIRS, below_threshold_indices=below_threshold_indices)
+    return render_template('imputation.html', image_paths=image_urls[1:-1], keypoints=keypoints, pose_pairs=POSE_PAIRS_MAP[model_name], below_threshold_indices=below_threshold_indices)
 
 @app.route('/save-keypoints/<directory_name>', methods=['POST'])
 def save_keypoints(directory_name):
