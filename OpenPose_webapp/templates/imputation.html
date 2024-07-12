@@ -43,190 +43,191 @@
             const canvas = document.getElementById('keypoint-canvas');
             const ctx = canvas.getContext('2d');
             let currentImageIndex = 0;
-            let keypointsAll = {{ keypoints|tojson }};
-            let imagePaths = {{ image_paths|tojson }};
-            const POSE_PAIRS = {{ pose_pairs|tojson }};
+            let keypointsAll = {{ keypoints| tojson
+        }};
+        let imagePaths = {{ image_paths| tojson }};
+        const POSE_PAIRS = {{ pose_pairs| tojson }};
 
-            // 画像選択のセレクターを初期化
-            imagePaths.forEach((path, index) => {
-                imageSelector.append(`<option value="${index}">${path.split('/').pop()}</option>`);
-            });
+        // 画像選択のセレクターを初期化
+        imagePaths.forEach((path, index) => {
+            imageSelector.append(`<option value="${index}">${path.split('/').pop()}</option>`);
+        });
 
-            imageSelector.change(function () {
-                currentImageIndex = $(this).val();
-                loadImageAndKeypoints(currentImageIndex);
-            });
+        imageSelector.change(function () {
+            currentImageIndex = $(this).val();
+            loadImageAndKeypoints(currentImageIndex);
+        });
 
-            function changeImage(index) {
-                currentImageIndex = index;
-                loadImageAndKeypoints(currentImageIndex);
+        function changeImage(index) {
+            currentImageIndex = index;
+            loadImageAndKeypoints(currentImageIndex);
+        }
+
+        $('#prev-image').click(function () {
+            if (currentImageIndex > 0) {
+                changeImage(currentImageIndex - 1);
             }
+        });
 
-            $('#prev-image').click(function () {
-                if (currentImageIndex > 0) {
-                    changeImage(currentImageIndex - 1);
+        $('#next-image').click(function () {
+            if (currentImageIndex < imagePaths.length - 1) {
+                changeImage(currentImageIndex + 1);
+            }
+        });
+
+        function loadImageAndKeypoints(index) {
+            const image = new Image();
+            image.src = imagePaths[index];
+            image.onload = function () {
+                $('#keypoint-image').attr('src', image.src);
+                canvas.width = image.width;
+                canvas.height = image.height;
+                drawSkeleton(keypointsAll[index]);
+                addDraggableKeypoints(keypointsAll[index]);
+            };
+        }
+
+        function drawSkeleton(keypoints) {
+            clearCanvas();
+            POSE_PAIRS.forEach(pair => {
+                let start = keypoints[pair[0]];
+                let end = keypoints[pair[1]];
+                if (start && end && start[0] != null && start[1] != null && end[0] != null && end[1] != null) {
+                    ctx.beginPath();
+                    ctx.moveTo(...start);
+                    ctx.lineTo(...end);
+                    ctx.strokeStyle = 'red';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
                 }
             });
+        }
 
-            $('#next-image').click(function () {
-                if (currentImageIndex < imagePaths.length - 1) {
-                    changeImage(currentImageIndex + 1);
+        function addDraggableKeypoints(keypoints) {
+            $('.keypoint').remove(); // 古いキーポイントを削除
+            keypoints.forEach((point, index) => {
+                // Check if the point is null and set a default position if it is
+                if (!point || point[0] === null || point[1] === null) {
+                    point = [canvas.width / 2, canvas.height / 2]; // デフォルトの位置を設定
+                    keypoints[index] = point; // キーポイント配列を更新
                 }
-            });
 
-            function loadImageAndKeypoints(index) {
-                const image = new Image();
-                image.src = imagePaths[index];
-                image.onload = function () {
-                    $('#keypoint-image').attr('src', image.src);
-                    canvas.width = image.width;
-                    canvas.height = image.height;
-                    drawSkeleton(keypointsAll[index]);
-                    addDraggableKeypoints(keypointsAll[index]);
-                };
-            }
+                // キーポイントのdivを作成し、コンテナに追加
+                const keypointDiv = $('<div class="keypoint"></div>').appendTo(container);
+                keypointDiv.css({
+                    left: point[0] + 'px',
+                    top: point[1] + 'px'
+                }).data('index', index);
 
-            function drawSkeleton(keypoints) {
-                clearCanvas();
-                POSE_PAIRS.forEach(pair => {
-                    let start = keypoints[pair[0]];
-                    let end = keypoints[pair[1]];
-                    if (start && end && start[0] != null && start[1] != null && end[0] != null && end[1] != null) {
-                        ctx.beginPath();
-                        ctx.moveTo(...start);
-                        ctx.lineTo(...end);
-                        ctx.strokeStyle = 'red';
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
+                // キーポイントをドラッグ可能にする
+                keypointDiv.draggable({
+                    containment: "parent",
+                    drag: function (event, ui) {
+                        // キーポイントの位置を配列に更新
+                        keypoints[$(this).data('index')] = [ui.position.left, ui.position.top];
+                        // スケルトンを再描画
+                        drawSkeleton(keypoints);
                     }
                 });
-            }
+            });
+        }
 
-            function addDraggableKeypoints(keypoints) {
-                $('.keypoint').remove(); // 古いキーポイントを削除
-                keypoints.forEach((point, index) => {
-                    // Check if the point is null and set a default position if it is
-                    if (!point || point[0] === null || point[1] === null) {
-                        point = [canvas.width / 2, canvas.height / 2]; // デフォルトの位置を設定
-                        keypoints[index] = point; // キーポイント配列を更新
-                    }
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
 
-                    // キーポイントのdivを作成し、コンテナに追加
-                    const keypointDiv = $('<div class="keypoint"></div>').appendTo(container);
+        $('#save-csv').click(function () {
+            const extendedDataToSave = keypointsAll.map((frame_keypoints) => {
+                return frame_keypoints.flatMap(kp => kp !== null ? kp : null);
+            });
+
+            var currentPath = window.location.pathname;
+            var endpointName = currentPath.split('/')[2];
+            var requestURL = '/save-keypoints/' + endpointName;
+
+            $.ajax({
+                url: requestURL,
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(extendedDataToSave),
+                success: function (response) {
+                    alert('Keypoints saved successfully!');
+                },
+                error: function (xhr, status, error) {
+                    alert('Error saving keypoints: ' + error.message);
+                }
+            });
+        });
+
+        // 足のサイズに関するキーポイントを保存する配列
+        // let footKeypoints = [
+        //     { id: 'right_toe', pos: null },
+        //     { id: 'right_heel', pos: null },
+        //     { id: 'right_ankle', pos: null },
+        //     { id: 'left_toe', pos: null },
+        //     { id: 'left_heel', pos: null },
+        //     { id: 'left_ankle', pos: null }
+        // ];
+
+        // キーポイントをキャンバスに描画する関数
+        function drawFootKeypoints() {
+            // 既存のキーポイントをクリア
+            $('.foot-keypoint').remove();
+
+            // 足のキーポイントを描画
+            footKeypoints.forEach(kp => {
+                if (kp.pos) {
+                    const keypointDiv = $(`<div class="keypoint foot-keypoint"></div>`).appendTo(container);
                     keypointDiv.css({
-                        left: point[0] + 'px',
-                        top: point[1] + 'px'
-                    }).data('index', index);
+                        left: kp.pos[0] + 'px',
+                        top: kp.pos[1] + 'px',
+                        'background-color': 'blue'  // 足のキーポイントは青色にする
+                    }).data('id', kp.id);
 
                     // キーポイントをドラッグ可能にする
                     keypointDiv.draggable({
                         containment: "parent",
                         drag: function (event, ui) {
-                            // キーポイントの位置を配列に更新
-                            keypoints[$(this).data('index')] = [ui.position.left, ui.position.top];
-                            // スケルトンを再描画
-                            drawSkeleton(keypoints);
+                            const id = $(this).data('id');
+                            const point = footKeypoints.find(p => p.id === id);
+                            point.pos = [ui.position.left, ui.position.top];
+                            drawConnectingLines();  // キーポイント間の線を描画する
                         }
                     });
-                });
-            }
-
-            function clearCanvas() {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-            }
-
-            $('#save-csv').click(function () {
-                const extendedDataToSave = keypointsAll.map((frame_keypoints) => {
-                    return frame_keypoints.flatMap(kp => kp !== null ? kp : null);
-                });
-
-                var currentPath = window.location.pathname;
-                var endpointName = currentPath.split('/')[2];
-                var requestURL = '/save-keypoints/' + endpointName;
-
-                $.ajax({
-                    url: requestURL,
-                    type: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify(extendedDataToSave),
-                    success: function (response) {
-                        alert('Keypoints saved successfully!');
-                    },
-                    error: function (xhr, status, error) {
-                        alert('Error saving keypoints: ' + error.message);
-                    }
-                });
+                }
             });
+        }
 
-            // 足のサイズに関するキーポイントを保存する配列
-            // let footKeypoints = [
-            //     { id: 'right_toe', pos: null },
-            //     { id: 'right_heel', pos: null },
-            //     { id: 'right_ankle', pos: null },
-            //     { id: 'left_toe', pos: null },
-            //     { id: 'left_heel', pos: null },
-            //     { id: 'left_ankle', pos: null }
-            // ];
-
-            // キーポイントをキャンバスに描画する関数
-            function drawFootKeypoints() {
-                // 既存のキーポイントをクリア
-                $('.foot-keypoint').remove();
-
-                // 足のキーポイントを描画
-                footKeypoints.forEach(kp => {
-                    if (kp.pos) {
-                        const keypointDiv = $(`<div class="keypoint foot-keypoint"></div>`).appendTo(container);
-                        keypointDiv.css({
-                            left: kp.pos[0] + 'px',
-                            top: kp.pos[1] + 'px',
-                            'background-color': 'blue'  // 足のキーポイントは青色にする
-                        }).data('id', kp.id);
-
-                        // キーポイントをドラッグ可能にする
-                        keypointDiv.draggable({
-                            containment: "parent",
-                            drag: function (event, ui) {
-                                const id = $(this).data('id');
-                                const point = footKeypoints.find(p => p.id === id);
-                                point.pos = [ui.position.left, ui.position.top];
-                                drawConnectingLines();  // キーポイント間の線を描画する
-                            }
-                        });
+        // キーポイント間を結ぶ線を描画する関数
+        function drawConnectingLines() {
+            clearCanvas();  // キャンバスをクリア
+            ctx.beginPath();
+            footKeypoints.forEach((kp, index) => {
+                if (kp.pos) {
+                    if (index === 0) {
+                        ctx.moveTo(...kp.pos);
+                    } else {
+                        ctx.lineTo(...kp.pos);
                     }
-                });
-            }
+                }
+            });
+            ctx.strokeStyle = 'blue';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
 
-            // キーポイント間を結ぶ線を描画する関数
-            function drawConnectingLines() {
-                clearCanvas();  // キャンバスをクリア
-                ctx.beginPath();
-                footKeypoints.forEach((kp, index) => {
-                    if (kp.pos) {
-                        if (index === 0) {
-                            ctx.moveTo(...kp.pos);
-                        } else {
-                            ctx.lineTo(...kp.pos);
-                        }
-                    }
-                });
-                ctx.strokeStyle = 'blue';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            }
+        // 「足のサイズを追加」ボタンのクリックイベント
+        // $('#add-foot-size').click(function () {
+        //     // 仮の座標でキーポイントを初期化
+        //     footKeypoints.forEach(kp => {
+        //         kp.pos = [canvas.width / 2, canvas.height / 2];
+        //     });
+        //     drawFootKeypoints();  // キーポイントを描画
+        //     drawConnectingLines();  // キーポイント間の線を描画
+        // });
 
-            // 「足のサイズを追加」ボタンのクリックイベント
-            // $('#add-foot-size').click(function () {
-            //     // 仮の座標でキーポイントを初期化
-            //     footKeypoints.forEach(kp => {
-            //         kp.pos = [canvas.width / 2, canvas.height / 2];
-            //     });
-            //     drawFootKeypoints();  // キーポイントを描画
-            //     drawConnectingLines();  // キーポイント間の線を描画
-            // });
-
-            // 初期状態で最初の画像を読み込む
-            loadImageAndKeypoints(0);
+        // 初期状態で最初の画像を読み込む
+        loadImageAndKeypoints(0);
         });
     </script>
 </body>
