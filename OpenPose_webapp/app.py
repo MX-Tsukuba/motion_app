@@ -7,12 +7,11 @@ from datetime import datetime
 import json
 # 外部ファイルからの関数をインポート（例: process_video関数）
 from func import openPoseToVideo
-from func import openPoseToVideo
 
 app = Flask(__name__, static_folder='static')
 
 def load_keypoints(csv_file_path):
-    df = pd.read_csv(csv_file_path, skiprows=1)
+    df = pd.read_csv(csv_file_path)
     keypoints_list = []
     for index, row in df.iterrows():
         keypoints = []
@@ -74,7 +73,11 @@ def select_directory():
 def imputation(directory_name):
     model_name = request.args.get('model_name', 'openPose')
     data_dir = os.path.join(app.static_folder, 'datas', directory_name)
-    keypoints_csv_file_path = os.path.join(data_dir, 'landmarks.csv')
+    fixed_keypoints_file_path = os.path.join(data_dir, 'fixed_keypoints.csv')
+    if os.path.exists(fixed_keypoints_file_path):
+        keypoints_csv_file_path = fixed_keypoints_file_path
+    else:
+        keypoints_csv_file_path = os.path.join(data_dir, 'landmarks.csv')
     probs_csv_file_path = os.path.join(data_dir, 'probs.csv')
     image_dir = os.path.join(data_dir, 'raw_frames')
 
@@ -95,7 +98,7 @@ def imputation(directory_name):
 
     image_urls = [os.path.join(app.static_url_path, 'datas', directory_name, 'raw_frames', os.path.basename(path)) for path in image_paths]
 
-    return render_template('imputation.html', image_paths=image_urls[1:-1], keypoints=keypoints, pose_pairs=POSE_PAIRS_MAP[model_name], below_threshold_indices=below_threshold_indices)
+    return render_template('imputation.html', image_paths=image_urls, keypoints=keypoints, pose_pairs=POSE_PAIRS_MAP[model_name], below_threshold_indices=below_threshold_indices)
 
 @app.route('/save-keypoints/<directory_name>', methods=['POST'])
 def save_keypoints(directory_name):
@@ -103,7 +106,7 @@ def save_keypoints(directory_name):
 
     csv_dir = os.path.join(app.static_folder, 'datas', directory_name, "fixed_keypoints.csv")
     json_dir = os.path.join(app.static_folder, 'datas', directory_name, "keypoints.json")
-    
+   
     header = [f'{xy}{i}' for i in range(31) for xy in ['x', 'y']]  # 31個のキーポイント
 
     # CSVファイルの保存
@@ -133,8 +136,6 @@ def save_keypoints(directory_name):
         json.dump(formatted_json, jsonfile, indent=4)
     
     return jsonify({'message': 'Keypoints saved successfully!'})
-
-
 
 if __name__ == '__main__':
     app.run(debug=True)
